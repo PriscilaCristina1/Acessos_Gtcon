@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+{% block page_title %}{{ action }} - {{ sheet_name }}{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a href="{{ url_for('view_sheet', sheet_name=sheet_name) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i> Voltar
+  </a>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h5 class="mb-0"><i class="bi bi-{{ icons.get(sheet_name, 'file-earmark') }} me-2"></i>{{ action }} Registro - {{ sheet_name }}</h5>
+  </div>
+  <div class="card-body">
+    <form method="POST">
+      <div class="row g-3">
+        {% for col in columns %}
+        {% set val = record[col] if record and record[col] else '' %}
+        <div class="col-md-6">
+          <label class="form-label">{{ labels.get(col, col) }}</label>
+          {% if col in ('observacao', 'descricao') %}
+          <textarea name="{{ col }}" class="form-control" rows="2">{{ val }}</textarea>
+          {% elif col == 'dia' %}
+          <input type="text" name="{{ col }}" class="form-control" value="{{ val }}" placeholder="dd/mm/aaaa">
+          {% elif col in ('email', 'novo_email', 'de_email', 'para_email') %}
+          <input type="email" name="{{ col }}" class="form-control" value="{{ val }}" placeholder="email@gtconbrasil.com.br">
+          {% elif col in ('senha_padrao', 'senha_padrao_anydesk', 'senha_maquina', 'senha_anydesk', 'onedrive') %}
+          <div class="input-group">
+            <input type="text" name="{{ col }}" class="form-control" value="{{ val }}" id="field-{{ col }}">
+            <button type="button" class="btn btn-outline-secondary" onclick="toggleFieldVisibility('field-{{ col }}')">
+              <i class="bi bi-eye"></i>
+            </button>
+          </div>
+          {% else %}
+          <input type="text" name="{{ col }}" class="form-control" value="{{ val }}">
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="mt-4">
+        <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Salvar</button>
+        <a href="{{ url_for('view_sheet', sheet_name=sheet_name) }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleFieldVisibility(id) {
+  const el = document.getElementById(id);
+  const btn = el.nextElementSibling.querySelector('i');
+  if (el.type === 'password') {
+    el.type = 'text';
+    btn.className = 'bi bi-eye-slash';
+  } else {
+    el.type = 'password';
+    btn.className = 'bi bi-eye';
+  }
+}
+</script>
+{% endblock %}

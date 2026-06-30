@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+<div class="row g-3">
+  {% for sheet in sheets %}
+  {% set count = counts.get(sheet, 0) %}
+  {% set icon = icons.get(sheet, "file-earmark") %}
+  <div class="col-6 col-md-4 col-lg-3 col-xl-2">
+    <a href="{{ url_for('view_sheet', sheet_name=sheet) }}" class="text-decoration-none">
+      <div class="card dashboard-card h-100">
+        <div class="card-body text-center">
+          <div class="dashboard-icon">
+            <i class="bi bi-{{ icon }}"></i>
+          </div>
+          <h6 class="card-title mb-1">{{ sheet }}</h6>
+          <span class="badge bg-info">{{ count }} registro{{ 's' if count != 1 }}</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

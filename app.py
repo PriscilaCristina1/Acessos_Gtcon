@@ -11,7 +11,7 @@ if USE_PG:
     import psycopg2.extras
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
+app.secret_key = os.environ.get("SECRET_KEY", "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6")
 
 MASTER_PASSWORD = os.environ.get("MASTER_PASSWORD", "gtcon@2026")
 
@@ -465,16 +465,20 @@ if __name__ == "__main__":
 
     init_db()
 
-    if not USE_PG:
-        if not os.path.exists("acessos.db"):
-            print("\n[INFO] Banco SQLite não encontrado. Importando dados do Excel...")
-            try:
-                from import_data import import_all
-                import_all()
-                print("[OK] Importação concluída!\n")
-            except Exception as e:
-                print(f"[ERRO] Falha ao importar dados: {e}")
-                print("[INFO] Certifique-se de que o arquivo 'Acessos GTCON.xlsx' está no diretório.")
+    conn = get_db()
+    cur = db_execute(conn, f"SELECT COUNT(*) as cnt FROM sheets")
+    sheet_count = cur.fetchone()["cnt"]
+    db_close(conn)
+
+    if sheet_count == 0:
+        print("\n[INFO] Banco vazio. Importando dados do Excel...")
+        try:
+            from import_data import import_all
+            import_all()
+            print("[OK] Importação concluída!\n")
+        except Exception as e:
+            print(f"[ERRO] Falha ao importar dados: {e}")
+            print("[INFO] Certifique-se de que o arquivo 'Acessos GTCON.xlsx' está no diretório.")
 
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)

@@ -1,6 +1,14 @@
 import sqlite3
+import os
 import openpyxl
 import re
+
+USE_PG = "DATABASE_URL" in os.environ
+PLACEHOLDER = "%s" if USE_PG else "?"
+
+if USE_PG:
+    import psycopg2
+    import psycopg2.extras
 
 DB_PATH = "acessos.db"
 EXCEL_PATH = "Acessos GTCON.xlsx"
@@ -154,56 +162,122 @@ def extract_sheet_data(ws, sheet_name):
     return result
 
 
-def create_database():
+def get_db():
+    if USE_PG:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"], sslmode="require")
+        conn.autocommit = False
+        return conn
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sheets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sheet_name TEXT NOT NULL,
-            sheet_key TEXT NOT NULL UNIQUE,
-            display_order INTEGER DEFAULT 0
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sheet_id INTEGER NOT NULL,
-            departamento TEXT DEFAULT '',
-            colaborador TEXT DEFAULT '',
-            anydesk TEXT DEFAULT '',
-            email TEXT DEFAULT '',
-            senha_padrao_anydesk TEXT DEFAULT '',
-            onedrive TEXT DEFAULT '',
-            certificado_gtcon TEXT DEFAULT '',
-            maquina TEXT DEFAULT '',
-            senha_maquina TEXT DEFAULT '',
-            usuario_exact TEXT DEFAULT '',
-            usuario_gtcon TEXT DEFAULT '',
-            senha_padrao TEXT DEFAULT '',
-            responsavel TEXT DEFAULT '',
-            dispositivo TEXT DEFAULT '',
-            modelo TEXT DEFAULT '',
-            serie TEXT DEFAULT '',
-            nome_dispositivo TEXT DEFAULT '',
-            processador TEXT DEFAULT '',
-            id_dispositivo TEXT DEFAULT '',
-            id_produto TEXT DEFAULT '',
-            instalado_por TEXT DEFAULT '',
-            dia TEXT DEFAULT '',
-            descricao TEXT DEFAULT '',
-            de_email TEXT DEFAULT '',
-            para_email TEXT DEFAULT '',
-            novo_email TEXT DEFAULT '',
-            observacao TEXT DEFAULT '',
-            FOREIGN KEY (sheet_id) REFERENCES sheets (id)
-        )
-    """)
-
-    conn.commit()
     return conn
+
+
+def db_execute(conn, query, params=None):
+    if USE_PG:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(query, params or ())
+        return cur
+    cur = conn.execute(query, params or ())
+    return cur
+
+
+def db_commit(conn):
+    conn.commit()
+
+
+def db_close(conn):
+    conn.close()
+
+
+def create_database():
+    conn = get_db()
+    if USE_PG:
+        db_execute(conn, """
+            CREATE TABLE IF NOT EXISTS sheets (
+                id SERIAL PRIMARY KEY,
+                sheet_name TEXT NOT NULL,
+                sheet_key TEXT NOT NULL UNIQUE,
+                display_order INTEGER DEFAULT 0
+            )
+        """)
+        db_execute(conn, """
+            CREATE TABLE IF NOT EXISTS records (
+                id SERIAL PRIMARY KEY,
+                sheet_id INTEGER NOT NULL REFERENCES sheets(id),
+                departamento TEXT DEFAULT '',
+                colaborador TEXT DEFAULT '',
+                anydesk TEXT DEFAULT '',
+                email TEXT DEFAULT '',
+                senha_padrao_anydesk TEXT DEFAULT '',
+                onedrive TEXT DEFAULT '',
+                certificado_gtcon TEXT DEFAULT '',
+                maquina TEXT DEFAULT '',
+                senha_maquina TEXT DEFAULT '',
+                usuario_exact TEXT DEFAULT '',
+                usuario_gtcon TEXT DEFAULT '',
+                senha_padrao TEXT DEFAULT '',
+                responsavel TEXT DEFAULT '',
+                dispositivo TEXT DEFAULT '',
+                modelo TEXT DEFAULT '',
+                serie TEXT DEFAULT '',
+                nome_dispositivo TEXT DEFAULT '',
+                processador TEXT DEFAULT '',
+                id_dispositivo TEXT DEFAULT '',
+                id_produto TEXT DEFAULT '',
+                instalado_por TEXT DEFAULT '',
+                dia TEXT DEFAULT '',
+                descricao TEXT DEFAULT '',
+                de_email TEXT DEFAULT '',
+                para_email TEXT DEFAULT '',
+                novo_email TEXT DEFAULT '',
+                observacao TEXT DEFAULT ''
+            )
+        """)
+    else:
+        db_execute(conn, """
+            CREATE TABLE IF NOT EXISTS sheets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sheet_name TEXT NOT NULL,
+                sheet_key TEXT NOT NULL UNIQUE,
+                display_order INTEGER DEFAULT 0
+            )
+        """)
+        db_execute(conn, """
+            CREATE TABLE IF NOT EXISTS records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sheet_id INTEGER NOT NULL,
+                departamento TEXT DEFAULT '',
+                colaborador TEXT DEFAULT '',
+                anydesk TEXT DEFAULT '',
+                email TEXT DEFAULT '',
+                senha_padrao_anydesk TEXT DEFAULT '',
+                onedrive TEXT DEFAULT '',
+                certificado_gtcon TEXT DEFAULT '',
+                maquina TEXT DEFAULT '',
+                senha_maquina TEXT DEFAULT '',
+                usuario_exact TEXT DEFAULT '',
+                usuario_gtcon TEXT DEFAULT '',
+                senha_padrao TEXT DEFAULT '',
+                responsavel TEXT DEFAULT '',
+                dispositivo TEXT DEFAULT '',
+                modelo TEXT DEFAULT '',
+                serie TEXT DEFAULT '',
+                nome_dispositivo TEXT DEFAULT '',
+                processador TEXT DEFAULT '',
+                id_dispositivo TEXT DEFAULT '',
+                id_produto TEXT DEFAULT '',
+                instalado_por TEXT DEFAULT '',
+                dia TEXT DEFAULT '',
+                descricao TEXT DEFAULT '',
+                de_email TEXT DEFAULT '',
+                para_email TEXT DEFAULT '',
+                novo_email TEXT DEFAULT '',
+                observacao TEXT DEFAULT '',
+                FOREIGN KEY (sheet_id) REFERENCES sheets (id)
+            )
+        """)
+    db_commit(conn)
+    db_close(conn)
+    return get_db()
 
 
 def clean_sheet_name_for_db(name):
@@ -513,74 +587,57 @@ def extract_generic_department(rows, header_row_idx, columns, sheet_name):
 
 def import_all():
     conn = create_database()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM records")
-    cursor.execute("DELETE FROM sheets")
-    conn.commit()
+    db_execute(conn, "DELETE FROM records")
+    db_execute(conn, "DELETE FROM sheets")
+    db_commit(conn)
 
     wb = openpyxl.load_workbook(EXCEL_PATH, data_only=True)
+
+    RECORD_FIELDS = ["departamento", "colaborador", "anydesk", "email",
+        "senha_padrao_anydesk", "onedrive", "certificado_gtcon", "maquina",
+        "senha_maquina", "usuario_exact", "usuario_gtcon", "senha_padrao",
+        "responsavel", "dispositivo", "modelo", "serie", "nome_dispositivo",
+        "processador", "id_dispositivo", "id_produto", "instalado_por", "dia",
+        "descricao", "de_email", "para_email", "novo_email", "observacao"]
+
+    insert_sql = f"""
+        INSERT INTO records (
+            sheet_id, {', '.join(RECORD_FIELDS)}
+        ) VALUES ({PLACEHOLDER}, {', '.join([PLACEHOLDER] * len(RECORD_FIELDS))})
+    """
 
     order = 0
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         key = clean_sheet_name_for_db(sheet_name)
-        cursor.execute(
-            "INSERT OR IGNORE INTO sheets (sheet_name, sheet_key, display_order) VALUES (?, ?, ?)",
-            (sheet_name.strip(), key, order)
-        )
-        cursor.execute("SELECT id FROM sheets WHERE sheet_key = ?", (key,))
-        sheet_id = cursor.fetchone()[0]
+        try:
+            db_execute(conn,
+                f"INSERT INTO sheets (sheet_name, sheet_key, display_order) VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})",
+                (sheet_name.strip(), key, order)
+            )
+        except Exception:
+            db_commit(conn)
+            db_execute(conn,
+                f"INSERT INTO sheets (sheet_name, sheet_key, display_order) VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})",
+                (sheet_name.strip(), key, order)
+            )
+        cur = db_execute(conn, f"SELECT id FROM sheets WHERE sheet_key = {PLACEHOLDER}", (key,))
+        sheet_id = cur.fetchone()[0]
+        db_commit(conn)
 
         records = smart_extract(ws, sheet_name)
 
         inserted = 0
         for rec in records:
-            cursor.execute("""
-                INSERT INTO records (
-                    sheet_id, departamento, colaborador, anydesk, email,
-                    senha_padrao_anydesk, onedrive, certificado_gtcon, maquina,
-                    senha_maquina, usuario_exact, usuario_gtcon, senha_padrao,
-                    responsavel, dispositivo, modelo, serie, nome_dispositivo,
-                    processador, id_dispositivo, id_produto, instalado_por, dia,
-                    descricao, de_email, para_email, novo_email, observacao
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                sheet_id,
-                rec.get("departamento", ""),
-                rec.get("colaborador", ""),
-                rec.get("anydesk", ""),
-                rec.get("email", ""),
-                rec.get("senha_padrao_anydesk", ""),
-                rec.get("onedrive", ""),
-                rec.get("certificado_gtcon", ""),
-                rec.get("maquina", ""),
-                rec.get("senha_maquina", ""),
-                rec.get("usuario_exact", ""),
-                rec.get("usuario_gtcon", ""),
-                rec.get("senha_padrao", ""),
-                rec.get("responsavel", ""),
-                rec.get("dispositivo", ""),
-                rec.get("modelo", ""),
-                rec.get("serie", ""),
-                rec.get("nome_dispositivo", ""),
-                rec.get("processador", ""),
-                rec.get("id_dispositivo", ""),
-                rec.get("id_produto", ""),
-                rec.get("instalado_por", ""),
-                rec.get("dia", ""),
-                rec.get("descricao", ""),
-                rec.get("de_email", ""),
-                rec.get("para_email", ""),
-                rec.get("novo_email", ""),
-                rec.get("observacao", ""),
-            ))
+            values = [sheet_id] + [rec.get(f, "") for f in RECORD_FIELDS]
+            db_execute(conn, insert_sql, tuple(values))
             inserted += 1
 
         print(f"  {sheet_name}: {inserted} registros importados")
         order += 1
 
-    conn.commit()
-    conn.close()
+    db_commit(conn)
+    db_close(conn)
     wb.close()
     print(f"\nTotal de {order} abas importadas com sucesso!")
 
